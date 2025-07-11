@@ -97,7 +97,7 @@ class CryptoAPI {
   connectWebSocket(symbols: string[], onMessage: (data: any) => void): WebSocket | null {
     try {
       const streams = symbols.map(symbol => `${symbol.toLowerCase()}usdt@ticker`).join('/');
-      const ws = new WebSocket(`${this.wsUrl}/${streams}`);
+      const ws = new WebSocket(`${this.wsUrl}/stream?streams=${streams}`);
       
       ws.onopen = () => {
         console.log('WebSocket connected');
