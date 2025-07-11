@@ -25,7 +25,7 @@ export interface OrderBookData {
 
 class CryptoAPI {
   private baseUrl = 'https://api.coingecko.com/api/v3';
-  private wsUrl = 'wss://stream.binance.com:9443/ws';
+  private wsUrl = 'wss://stream.binance.com:9443';
   
   // CoinGecko API methods
   async getTopCryptos(limit: number = 10): Promise<CryptoPrice[]> {
