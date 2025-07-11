@@ -181,39 +181,24 @@ class CryptoAPI {
   }
 
   // WebSocket connection for real-time data
-  connectWebSocket(symbols: string[], onMessage: (data: any) => void): WebSocket | null {
-    try {
-      const streams = symbols.map(symbol => `${symbol.toLowerCase()}usdt@ticker`).join('/');
-      const ws = new WebSocket(`${this.wsUrl}/stream?streams=${streams}`);
-      
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.stream && data.data) {
-            onMessage(data.data);
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+  getWebSocketConfig(symbols: string[]) {
+    const streams = symbols.map(symbol => `${symbol.toLowerCase()}usdt@ticker`).join('/');
+    const url = `${this.wsUrl}/stream?streams=${streams}`;
+    
+    const parseMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.stream && data.data) {
+          return data.data;
         }
-      };
-      
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-      
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
-      };
-      
-      return ws;
-    } catch (error) {
-      console.error('Error connecting WebSocket:', error);
-      return null;
-    }
+        return null;
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+        return null;
+      }
+    };
+    
+    return { url, parseMessage };
   }
 
   // Market data aggregation

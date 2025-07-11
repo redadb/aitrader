@@ -1,12 +1,34 @@
 import { useState, useEffect } from 'react';
 import { cryptoAPI, CryptoPrice } from '../services/api';
+import { useWebSocket } from './useWebSocket';
 
 export function useCryptoData(symbols: string[] = ['BTC', 'ETH', 'SOL', 'ADA']) {
   const [prices, setPrices] = useState<CryptoPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
 
+  // Get WebSocket configuration
+  const wsConfig = cryptoAPI.getWebSocketConfig(symbols);
+  
+  // Use the robust WebSocket hook
+  const { isConnected, error: wsError } = useWebSocket(
+    wsConfig.url,
+    (data) => {
+      const parsedData = wsConfig.parseMessage({ data } as MessageEvent);
+      if (parsedData && parsedData.s && parsedData.c) {
+        const symbol = parsedData.s.replace('USDT', '');
+        setPrices(prev => prev.map(price => 
+          price.symbol === symbol 
+            ? { ...price, price: parseFloat(parsedData.c) }
+            : price
+        ));
+      }
+    },
+    {
+      reconnectAttempts: 5,
+      reconnectInterval: 3000,
+    }
+  );
   // Fetch initial data
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -26,52 +48,14 @@ export function useCryptoData(symbols: string[] = ['BTC', 'ETH', 'SOL', 'ADA']) 
     fetchInitialData();
   }, []);
 
-  // WebSocket connection for real-time updates
+  // Update error state from WebSocket
   useEffect(() => {
-    let ws: WebSocket | null = null;
-
-    const connectWebSocket = () => {
-      ws = cryptoAPI.connectWebSocket(symbols, (data) => {
-        // Update real-time price data
-        if (data.s && data.c) {
-          const symbol = data.s.replace('USDT', '');
-          setPrices(prev => prev.map(price => 
-            price.symbol === symbol 
-              ? { ...price, price: parseFloat(data.c) }
-              : price
-          ));
-        }
-      });
-
-      if (ws) {
-        ws.onopen = () => {
-          setIsConnected(true);
-          setError(null);
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          setIsConnected(false);
-          setError('WebSocket connection failed');
-        };
-
-        ws.onclose = () => {
-          setIsConnected(false);
-          console.log('WebSocket disconnected');
-        };
-      }
-    };
-
-    connectWebSocket();
-
-    // Cleanup function
-    return () => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-      setIsConnected(false);
-    };
-  }, [symbols]);
+    if (wsError) {
+      setError(`WebSocket error: ${wsError}`);
+    } else if (isConnected && error?.includes('WebSocket')) {
+      setError(null);
+    }
+  }, [wsError, isConnected, error]);
 
   // Periodic data refresh (fallback for WebSocket)
   useEffect(() => {
