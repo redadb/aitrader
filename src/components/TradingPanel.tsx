@@ -1,5 +1,12 @@
-import React, { useState } from 'react';
-import { ShoppingCart, TrendingUp, TrendingDown, Calculator } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShoppingCart, TrendingUp, TrendingDown, Calculator, CheckCircle, XCircle } from 'lucide-react';
+import { TradingEngine } from '../services/api';
+
+interface OrderResult {
+  success: boolean;
+  orderId?: string;
+  error?: string;
+}
 
 export default function TradingPanel() {
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
@@ -7,17 +14,86 @@ export default function TradingPanel() {
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('44250');
   const [total, setTotal] = useState('');
+  const [balance, setBalance] = useState(0);
+  const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const tradingEngine = TradingEngine.getInstance();
+
+  useEffect(() => {
+    setBalance(tradingEngine.getBalance());
+  }, []);
 
   const calculateTotal = () => {
     if (amount && price) {
       const totalValue = parseFloat(amount) * parseFloat(price);
       setTotal(totalValue.toFixed(2));
+    } else {
+      setTotal('');
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     calculateTotal();
   }, [amount, price]);
+
+  const handlePercentageClick = (percentage: number) => {
+    if (side === 'buy') {
+      const availableBalance = balance * 0.99; // Account for fees
+      const currentPrice = parseFloat(price) || 44250;
+      const maxAmount = (availableBalance * (percentage / 100)) / currentPrice;
+      setAmount(maxAmount.toFixed(8));
+    } else {
+      // For sell orders, we'd need to know the current position
+      // For now, just set a mock amount
+      const mockPosition = 0.5; // Mock BTC position
+      const sellAmount = mockPosition * (percentage / 100);
+      setAmount(sellAmount.toFixed(8));
+    }
+  };
+
+  const handleSubmitOrder = async () => {
+    if (!amount || parseFloat(amount) <= 0) {
+      setOrderResult({ success: false, error: 'Please enter a valid amount' });
+      return;
+    }
+
+    if (orderType !== 'market' && (!price || parseFloat(price) <= 0)) {
+      setOrderResult({ success: false, error: 'Please enter a valid price' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setOrderResult(null);
+
+    try {
+      const order = {
+        symbol: 'BTC',
+        side,
+        type: orderType,
+        amount: parseFloat(amount),
+        price: orderType !== 'market' ? parseFloat(price) : undefined,
+      };
+
+      const result = tradingEngine.placeOrder(order);
+      setOrderResult(result);
+
+      if (result.success) {
+        // Reset form on successful order
+        setAmount('');
+        setTotal('');
+        // Update balance
+        setBalance(tradingEngine.getBalance());
+      }
+    } catch (error) {
+      setOrderResult({ success: false, error: 'Failed to place order' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const estimatedFee = parseFloat(total || '0') * 0.001; // 0.1% fee
+  const estimatedTotal = parseFloat(total || '0') + estimatedFee;
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
@@ -28,6 +104,27 @@ export default function TradingPanel() {
         </h3>
         <Calculator className="h-5 w-5 text-gray-400" />
       </div>
+
+      {/* Order Result */}
+      {orderResult && (
+        <div className={`mb-4 p-3 rounded-lg flex items-center space-x-2 ${
+          orderResult.success 
+            ? 'bg-emerald-500/20 border border-emerald-500/30' 
+            : 'bg-red-500/20 border border-red-500/30'
+        }`}>
+          {orderResult.success ? (
+            <CheckCircle className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <XCircle className="h-4 w-4 text-red-400" />
+          )}
+          <span className={`text-sm ${orderResult.success ? 'text-emerald-400' : 'text-red-400'}`}>
+            {orderResult.success 
+              ? `Order placed successfully! ID: ${orderResult.orderId?.slice(-8)}` 
+              : orderResult.error
+            }
+          </span>
+        </div>
+      )}
 
       {/* Buy/Sell Toggle */}
       <div className="flex mb-4">
@@ -79,6 +176,7 @@ export default function TradingPanel() {
             onChange={(e) => setPrice(e.target.value)}
             className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-emerald-500 focus:outline-none"
             placeholder="0.00"
+            step="0.01"
           />
         </div>
       )}
@@ -92,11 +190,13 @@ export default function TradingPanel() {
           onChange={(e) => setAmount(e.target.value)}
           className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-emerald-500 focus:outline-none"
           placeholder="0.00000000"
+          step="0.00000001"
         />
         <div className="flex justify-between mt-2 text-xs">
           {['25%', '50%', '75%', '100%'].map((percent) => (
             <button
               key={percent}
+              onClick={() => handlePercentageClick(parseInt(percent))}
               className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors"
             >
               {percent}
@@ -111,9 +211,15 @@ export default function TradingPanel() {
         <input
           type="number"
           value={total}
-          onChange={(e) => setTotal(e.target.value)}
+          onChange={(e) => {
+            setTotal(e.target.value);
+            if (e.target.value && price) {
+              setAmount((parseFloat(e.target.value) / parseFloat(price)).toFixed(8));
+            }
+          }}
           className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-emerald-500 focus:outline-none"
           placeholder="0.00"
+          step="0.01"
         />
       </div>
 
@@ -122,32 +228,42 @@ export default function TradingPanel() {
         <div className="flex justify-between text-sm">
           <span className="text-gray-400">Available:</span>
           <span className="text-white">
-            {side === 'buy' ? '$12,450.00 USD' : '0.5234 BTC'}
+            {side === 'buy' ? `$${balance.toLocaleString()} USD` : '0.5234 BTC'}
           </span>
         </div>
+        {side === 'buy' && parseFloat(total || '0') > balance && (
+          <div className="text-red-400 text-xs mt-1">Insufficient balance</div>
+        )}
       </div>
 
       {/* Submit Button */}
       <button
-        className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
+        onClick={handleSubmitOrder}
+        disabled={isSubmitting || (side === 'buy' && parseFloat(total || '0') > balance)}
+        className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           side === 'buy'
             ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
             : 'bg-red-500 hover:bg-red-600 text-white'
         }`}
       >
-        {side === 'buy' ? 'Buy BTC' : 'Sell BTC'}
+        {isSubmitting ? 'Placing Order...' : `${side === 'buy' ? 'Buy' : 'Sell'} BTC`}
       </button>
 
       {/* Order Summary */}
-      <div className="mt-4 text-xs text-gray-400">
+      <div className="mt-4 text-xs text-gray-400 space-y-1">
         <div className="flex justify-between">
-          <span>Est. Fee:</span>
-          <span>$2.21 (0.1%)</span>
+          <span>Est. Fee (0.1%):</span>
+          <span>${estimatedFee.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
           <span>Est. Total:</span>
-          <span className="text-white">${(parseFloat(total || '0') + 2.21).toFixed(2)}</span>
+          <span className="text-white font-semibold">${estimatedTotal.toFixed(2)}</span>
         </div>
+        {orderType === 'market' && (
+          <div className="text-yellow-400 text-xs mt-2">
+            ⚠️ Market orders execute immediately at current market price
+          </div>
+        )}
       </div>
     </div>
   );
