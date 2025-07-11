@@ -17,21 +17,7 @@ export default function OrderBook() {
     const updateOrderBook = () => {
       setLoading(true);
       const newOrderBook = cryptoAPI.generateOrderBook('BTC');
-      
-      // Convert to the format we need
-      const bids: OrderBookEntry[] = newOrderBook.bids.map(([price, amount]) => ({
-        price,
-        amount,
-        total: price * amount
-      }));
-      
-      const asks: OrderBookEntry[] = newOrderBook.asks.map(([price, amount]) => ({
-        price,
-        amount,
-        total: price * amount
-      }));
-
-      setOrderBook({ bids, asks });
+      setOrderBook(newOrderBook);
       setLastUpdate(new Date());
       setLoading(false);
     };
